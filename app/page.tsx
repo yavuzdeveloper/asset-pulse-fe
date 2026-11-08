@@ -1,69 +1,147 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import Sidebar from "@/components/Sidebar";
+import DashboardHeader from "@/components/DashboardHeader";
+import PriceCard from "@/components/PriceCard";
+import PriceChart from "@/components/PriceChart";
+import ForecastCard from "@/components/ForecastCard";
+import PriceHistoryTable from "@/components/PriceHistoryTable";
+import { formatPrice } from "@/lib/format";
+import type {
+  Metal,
+  MetalsResponse,
+  GoldPrice,
+  GoldHistoryResponse,
+  SpotResponse,
+} from "@/types/market";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Home() {
+  const [metals, setMetals] = useState<Metal[]>([]);
+  const [goldHistory, setGoldHistory] = useState<GoldPrice[]>([]);
+  const [spot, setSpot] = useState<SpotResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!API_URL) {
+      setError("NEXT_PUBLIC_API_URL is not configured");
+      setLoading(false);
+      return;
+    }
+
+    const fetchMarketData = async () => {
+      try {
+        const [metalsResponse, historyResponse] = await Promise.all([
+          fetch(`${API_URL}/metals`),
+          fetch(`${API_URL}/metals/gold/history`),
+        ]);
+
+        if (!metalsResponse.ok || !historyResponse.ok) {
+          throw new Error("Could not load market data");
+        }
+
+        const metalsData: MetalsResponse = await metalsResponse.json();
+        const historyData: GoldHistoryResponse = await historyResponse.json();
+
+        setMetals(metalsData.metals);
+        setGoldHistory(historyData.prices);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMarketData();
+  }, []);
+
+  useEffect(() => {
+    if (!API_URL) return;
+
+    let cancelled = false;
+
+    const fetchSpot = async () => {
+      try {
+        const response = await fetch(`${API_URL}/metals/spot`);
+        if (!response.ok) throw new Error("Live price request failed");
+
+        const data: SpotResponse = await response.json();
+        if (!cancelled) setSpot(data);
+      } catch (err) {
+        console.error("Spot price error:", err);
+      }
+    };
+
+    fetchSpot();
+    const interval = setInterval(fetchSpot, 60000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const gold =
+    spot?.gold.price ?? metals.find(metal => metal.symbol === "XAU")?.price;
+
+  const silver =
+    spot?.silver.price ?? metals.find(metal => metal.symbol === "XAG")?.price;
+
+  const isStale =
+    spot?.stale === true || (spot?.data_state?.age_seconds ?? 0) > 180;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <main className="min-h-screen bg-[#09090b] text-white">
+      <div className="flex min-h-screen">
+        <Sidebar />
+
+        <div className="min-w-0 flex-1 px-4 py-6 sm:px-8 lg:px-10">
+          <DashboardHeader isStale={isStale} updatedAt={spot?.updated_at} />
+
+          {error && (
+            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+              {error}
+            </div>
+          )}
+
+          <section className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <PriceCard
+              label="Gold / XAU"
+              badge={{ text: "GOLD", tone: "gold" }}
+              value={loading ? "Loading..." : gold ? formatPrice(gold) : "—"}
+              hint="USD / Troy Ounce"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <PriceCard
+              label="Silver / XAG"
+              badge={{ text: "SILVER", tone: "silver" }}
+              value={
+                loading ? "Loading..." : silver ? formatPrice(silver) : "—"
+              }
+              hint="USD / Troy Ounce"
+            />
+            <PriceCard
+              label="Historical Gold Data"
+              value={goldHistory.length.toLocaleString("en-US")}
+              hint="Daily price records available"
+            />
+          </section>
+
+          <section className="mb-8 grid gap-6 xl:grid-cols-3">
+            <PriceChart prices={goldHistory} loading={loading} />
+            <ForecastCard />
+          </section>
+
+          <PriceHistoryTable prices={goldHistory} loading={loading} />
+
+          <footer className="mt-8 flex flex-wrap justify-between gap-2 border-t border-zinc-800 pt-5 text-xs text-zinc-600">
+            <span>AssetPulse · Asset Intelligence Platform</span>
+            <span>Market data provided by connected API</span>
+          </footer>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
