@@ -15,6 +15,8 @@ import type {
   GoldHistoryResponse,
   SpotResponse,
 } from "@/types/market";
+import GoldChart from "@/components/gold/GoldChart";
+// import GoldChart from "@/components/GoldChart";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -129,7 +131,11 @@ export default function Home() {
             />
           </section>
 
-          <section className="mb-8 grid gap-6 xl:grid-cols-3">
+          <section className="mb-8">
+            <GoldChart />
+          </section>
+
+          <section className="mb-8 grid gap-6 xl:grid-cols-2">
             <PriceChart prices={goldHistory} loading={loading} />
             <ForecastCard />
           </section>
